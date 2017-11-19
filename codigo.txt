@@ -1,0 +1,346 @@
+
+/*--------------------------------------------------------------
+|																|
+|			 	PROJETO DE SISTEMAS EMBARCADOS I				|
+|			   ALUNOS : DANIEL , GRABIEL E OCELIO				|
+----------------------------------------------------------------*/
+
+
+#include <p18f4550.h>
+#include<stdio.h>
+#include <i2c.h>
+
+void timer_config(void);
+void high_isr (void);
+/*--------------------------------------------------------------
+|																|
+|						   	PORTAS								|
+|																|
+----------------------------------------------------------------*/
+
+#define ENTRADARFID PORTAbits.RA0
+#define ENTRADASERVIDOR PORTAbits.RA2
+#define SAIDASERVIDOR PORTAbits.RA1
+#define ENTRADARTC1 PORTBbits.RB0
+#define ENTRADARTC2 PORTBbits.RB1
+#define PORTA PORTCbits.RC0
+#define SAIU PORTCbits.RC1
+#define ENTRAPORTA PORTCbits.RC7
+#define _RS	PORTEbits.RE0
+#define _RW	PORTEbits.RE2
+#define _E	PORTEbits.RE1
+
+/*--------------------------------------------------------------
+|																|
+|						VARIAVEIS GLOBAIS						|
+|																|
+----------------------------------------------------------------*/
+
+int bin[8], RFID[21], RESPOSTA[25], controle=0;
+long int cont = 0;
+long int ano,mes,dia,hora,minuto,segundo;
+int hora1=0,minuto1=0,segundo1=0,hora2=0,minuto2=0,segundo2=0;
+
+
+
+/*--------------------------------------------------------------
+|																|
+|						   DELAYS								|
+|																|
+----------------------------------------------------------------*/
+void Delay_Segundo (){
+
+	unsigned long int aux;
+	for (aux=0;aux<=80000;aux++) {};
+
+}
+void Delay_Segundo2 (){
+
+	unsigned long int aux;
+	for (aux=0;aux<=600;aux++) {};
+
+}
+
+void Delay_metadeBit (){
+
+	unsigned long int aux;
+	for (aux=0;aux<=32;aux++) {};
+
+}
+
+void Delay_1200BPS (){
+
+	unsigned long int aux;
+	for (aux=0;aux<=40;aux++) {};
+
+}
+
+void Delay_Bit2 (){
+
+	unsigned long int aux;
+	for (aux=0;aux<=59;aux++) {};
+
+}
+
+void Delay_1200BPS2 (){
+
+	unsigned long int aux;
+	for (aux=0;aux<=63;aux++) {};
+
+}
+
+void delayLCD(){
+	int k,j;
+	for(k=0;k<10;k++)
+	for(j=0;j<10;j++);
+}
+
+void delayPorta(){
+	int k,j;
+	for(k=0;k<1000;k++)
+	for(j=0;j<1000;j++);
+}
+
+/*--------------------------------------------------------------
+|																|
+|						   	  Timer								|
+|																|
+----------------------------------------------------------------*/
+
+
+void timer_config(){
+	INTCONbits.GIE=1;
+	INTCONbits.TMR0IE = 1;
+	INTCON2bits.TMR0IP = 1;
+	T0CON = 0b11000100;
+	TMRL = 5;
+}
+
+#pragma code high_vector=0x08
+void interrupt_at_high_vector(void)		
+{
+_asm GOTO high_isr _endasm	
+}
+#pragma code
+
+#pragma interrupt high_isr
+
+void high_isr(void){
+	if(!INTCONbits.TMR0IF);
+	else{
+		INTCONbits.TMR0IF=0;
+		TMRL0=5;
+		cont++;
+	}
+}
+
+
+
+/*--------------------------------------------------------------
+|																|
+|						   FUNÇÕES RFID							|
+|																|
+----------------------------------------------------------------*/
+
+unsigned  Recebe_BitRFID(int l){
+	int k=8;
+	Delay_metadeBit ();
+	ENTRADARFID=0;	
+	while (k>0){
+		bin[k]=ENTRADARFID;
+		Delay_Bit2 ();
+		k--;
+	}
+	Delay_metadeBit ();
+	RFID[l] =((bin[0]*128)+(bin[1]*64)+(bin[2]*32)+(bin[3]*16)+(bin[4]*8)+(bin[5]*4)+(bin[6]*2)+bin[7]);
+	Delay_metadeBit ();
+}
+
+unsigned Recebe_RFID(){
+	int i=3;
+	RFID[1]=64;
+	RFID[2]=44;
+	RFID[18]=segundo1;
+	RFID[19]=segundo2;
+	RFID[20]=minuto1;
+	T0CON = 0b11111000;
+	while (i<17){
+	while (ENTRADARFID) {};
+	Recebe_BitRFID (i);
+	i++;
+	}
+}
+
+unsigned Envia_RFID(int l){
+	int j=0;
+	SAIDASERVIDOR = 0;
+	Delay_1200BPS2 ();
+	while (j<8){
+		SAIDASERVIDOR = RFID[l] % 2 ;
+		Delay_1200BPS ();
+		j++;
+		RFID[l] = RFID[l] / 2;
+	}
+	SAIDASERVIDOR = 1;
+	Delay_1200BPS2 ();
+}
+
+/*--------------------------------------------------------------
+|																|
+|					FUNÇÕES DO SERVIDOR							|
+|																|
+----------------------------------------------------------------*/
+
+
+unsigned Envia_SERVIDOR(){
+	int k=0;
+	while (k<21){
+		Envia_RFID (k);
+		k++;
+	}
+}
+
+unsigned  Recebe_BitServidor(int l){
+	int k=8;
+	Delay_metadeBit ();
+	ENTRADASERVIDOR=0;	
+	while (k>0){
+		bin[k]=ENTRADASERVIDOR;
+		Delay_Bit2 ();
+		k--;
+	}
+	Delay_metadeBit ();
+	RESPOSTA[l] =((bin[0]*128)+(bin[1]*64)+(bin[2]*32)+(bin[3]*16)+(bin[4]*8)+(bin[5]*4)+(bin[6]*2)+bin[7]);
+	Delay_metadeBit ();
+}
+
+
+
+unsigned Recebe_SERVIDOR(){
+	int i=0;
+	while (i<25){
+	while (ENTRADASERVIDOR) {};
+		Recebe_BitServidor (i);
+		i++;
+	}
+}
+
+
+
+/*--------------------------------------------------------------
+|																|
+|						   	LCD e Porta							|
+|																|
+----------------------------------------------------------------*/
+
+void cmd(int s)
+{
+	PORTD=s;
+	_RS=0;
+	_RW=0;
+	_E=1;
+	delayLCD();
+	_E=0;
+}
+
+void data(char a)
+{
+	PORTD=a;
+	_RS=1;
+	_RW=0;
+	_E=1;
+	delayLCD();
+	_E=0;
+}
+
+unsigned LCD_Autorizado (){
+	int i;
+	char b[]="Autorizado";
+	cmd(0x38);
+	cmd(0X0E);
+	cmd(0X0C);
+	cmd(0X01);
+	cmd(0X80);
+	for(i=6;RESPOSTA[i]!=',.';i++)
+		data(RESPOSTA[i]);
+	cmd(0xC0);
+	for(i=0;b[i]!='\0';i++)
+		data(b[i]);	
+}
+
+unsigned LCD_NAutorizado (){
+	int i;
+	char a[]="Acesso";
+	char b[]="Não Autorizado";
+	cmd(0x38);
+	cmd(0X0E);
+	cmd(0X0C);
+	cmd(0X01);
+	cmd(0X80);
+	for(i=0;a[i]!='\0';i++)
+		data(a[i]);
+	cmd(0xC0);
+	for(i=0;b[i]!='\0';i++)
+		data(b[i]);	
+}
+
+void Abre_Porta(){
+	PORTA = 1;
+	while (!ENTRAPORTA){
+		controle=1;
+	}
+	PORTA = 0;
+	cmd(0x08);
+	cmd(0x06);
+}
+
+void Controle_Porta(){
+	if ((RESPOSTA[0]==64)&&(RESPOSTA[1]==44)&&(RESPOSTA[2]==65)&&(RESPOSTA[3]==67)&&(RESPOSTA[4]==75)&&(RESPOSTA[5]==44)){
+			LCD_Autorizado();
+			Abre_Porta();
+	}
+	else{
+			LCD_NAutorizado();
+			delayPorta();
+			cmd(0x08);
+			cmd(0x06);
+	}
+}
+void Saiu(){
+	if (SAIU==1){
+		controle=0;
+	}
+	if (SAIU==0){}
+}
+
+
+/*--------------------------------------------------------------
+|																|
+|						  FUNÇÃO PRINCIPAL						|
+|																|
+----------------------------------------------------------------*/
+
+void main (){
+	ADCON1 = 0b00001111;
+	TRISA =	0b11111101;
+	TRISB = 0b00000011;
+	TRISC = 0b11100000;
+	TRISD = 0b00000000;
+	TRISE = 0b00000000;
+	timer_config();
+	while(1){
+		pegahora();
+		/*if (controle==0){
+			Recebe_RFID();
+			Envia_SERVIDOR();
+			Recebe_SERVIDOR();
+			Controle_Porta();
+		}
+		while (controle==1){
+			Saiu();
+			Recebe_RFID();
+			Envia_SERVIDOR();
+		}*/
+	}
+}
+
